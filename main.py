@@ -22,8 +22,8 @@ theta_nominal = 0.0  # Desired heading angle
 alpha = 1.0  # Alpha for CBF
 
 # Kinematic model
-def kinematic_model(state, v, delta, dt):
-    x, y, theta = state
+def kinematic_model(state, v, delta, dt, L):
+    x, y, theta = state # state = (x,y,theta)
     x_dot = v * np.cos(theta)
     y_dot = v * np.sin(theta)
     theta_dot = v / L * np.tan(delta)
@@ -35,47 +35,44 @@ def kinematic_model(state, v, delta, dt):
     return np.array([x, y, theta])
 
 # Barrier function
-def barrier_function(x, y):
-    return (x - x_c)**2 + (y - y_c)**2 - r**2
+def barrier_function(x):
+    return (x[0])**2 + (x[1])**2 - r**2 #Create a Barrier function that x1^2 + x2^2 = r^2
 
-# Barrier function derivative
-def barrier_derivative(x, y, v, theta):
-    return 2 * (x - x_c) * v * np.cos(theta) + 2 * (y - y_c) * v * np.sin(theta)
+def safe_region(x):
+    return barrier_function(x) >=0  #B(X)>= 0 in all safe region where x in part of Xs
 
-# Control with CBF
-def control_with_cbf(state, v_nominal, delta_nominal):
-    x, y, theta = state
+def unsafe_region(x):
+    return barrier_function(x) < 0 #B(X) < 0 in all safe region where x in part of Xu
 
-    # Define control variables
-    v = cp.Variable()
-    delta = cp.Variable()
+# Barrier function derivative)
+def gradient_B(x):
+    return np.array([2*x[0], 2*x[1]])
 
-    # Define nominal control input
-    u_nominal = np.array([v_nominal, delta_nominal])
+def Lv_B(x,theta,v):
+    gradient = gradient_B(x)
+    dynamics = np.array([v*np.cos(theta), v * np.sin(theta)])
+    return np.dot(gradient,dynamics)
 
-    # Define the barrier function constraint
-    B = barrier_function(x, y)
-    B_dot = barrier_derivative(x, y, v_nominal, theta)
-    constraint = B_dot + alpha * B >= 0
+#the set C 
+def set_C(x):
+    return x[0] >=0
 
-    # Objective: minimize (v - v_nominal)^2 + (delta - delta_nominal)^2
-    objective = cp.Minimize((v - v_nominal)**2 + (delta - delta_nominal)**2)
+#The zero level set for the barrier function
+def area_B0_level():
+    return 2*np.pi*r
 
-    # Optimization problem
-    prob = cp.Problem(objective, [constraint])
+def C_intersect_B():
+    return np.pi*r/2 #not right
 
-    # Solve the problem
-    prob.solve()
+def check_ratio(epsilon):
+    ratio = C_intersect_B/area_B0_level
+    return ratio <= epsilon
 
-    return v.value, delta.value
 
-# Simulate the vehicle
+# 
 trajectory = []
 for t in np.arange(0, T, dt):
     trajectory.append(state)
-
-    # Compute control with CBF
-    v, delta = control_with_cbf(state, v_nominal, theta_nominal)
 
     # Update state using kinematic model
     state = kinematic_model(state, v, delta, dt)
