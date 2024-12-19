@@ -6,7 +6,7 @@ import math
 import random
 import sys
 import os
-
+import numpy as np
 #import neat
 import pygame
 import gymnasium as gym
@@ -48,7 +48,7 @@ class Car:
         self.drawing_radars = [] # Radars To Be Drawn
 
         self.alive = True # Boolean To Check If Car is Crashed
-
+        self.previous_position = [830, 920]
         self.distance = 0 # Distance Driven
         self.time = 0 # Time Passed
 
@@ -120,9 +120,11 @@ class Car:
         length = 0.5 * CAR_SIZE_X
         left_top = [self.center[0] + math.cos(math.radians(360 - (self.angle + 30))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 30))) * length]
         right_top = [self.center[0] + math.cos(math.radians(360 - (self.angle + 150))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 150))) * length]
-        left_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 210))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 210))) * length]
-        right_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 330))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 330))) * length]
-        self.corners = [left_top, right_top, left_bottom, right_bottom]
+        # left_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 210))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 210))) * length]
+        # right_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 330))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 330))) * length]
+        # self.corners = [left_top, right_top, left_bottom, right_bottom]
+        self.corners = [left_top, right_top]
+
 
         # Check Collisions And Clear Radars
         self.check_collision(game_map)
@@ -131,6 +133,7 @@ class Car:
         # From -90 To 120 With Step-Size 45 Check Radar
         for d in range(-90, 120, 45):
             self.check_radar(d, game_map)
+
 
     def get_data(self):
         # Get Distances To Border
@@ -145,10 +148,16 @@ class Car:
         # Basic Alive Function
         return self.alive
 
-    def get_reward(self):
+    def get_reward(self, last_position):
         # Calculate Reward (Maybe Change?)
         # return self.distance / 50.0
         return self.distance / (CAR_SIZE_X / 2)
+        #print("last",last_position)
+        #print("now:", self.position)
+        # X = self.position[0]
+        # Y = self.position[1]
+        # distance = np.sqrt(float(X-last_position[0])**2 + float(Y-last_position[1])**2)
+        # return distance/(CAR_SIZE_X / 2)
 
     def rotate_center(self, image, angle):
         # Rotate The Rectangle
@@ -158,6 +167,8 @@ class Car:
         rotated_rectangle.center = rotated_image.get_rect().center
         rotated_image = rotated_image.subsurface(rotated_rectangle).copy()
         return rotated_image
+    
+
 
 #This is the default neat ML
 # def run_simulation(genomes, config):
@@ -247,59 +258,78 @@ class Car:
 #         pygame.display.flip()
 #         clock.tick(60) # 60 FPS
 
-def runsimulation():
-    #a timer to force stop
-    total_steps = 0
-    #setting up the pygame
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    game_map = pygame.image.load('map3.png').convert()
+    def runsimulation(self):
+        #a timer to force stop
+        total_steps = 0
 
-    #seting up the SAC
-    env = Env.CarEnv(game_map,screen)
-    #loaded the model I trained so far
-    model = SAC.load("sac_car_policy2",env)
+        map_paths = ['map.png', 'map2.png', 'map3.png','map4.png','map5.png']
+        current_map_index = 0  # Start with the first map
 
-    #this is for creating a new model
-    #model = SAC("MlpPolicy", env, verbose=1)
+        #setting up the pygame
+        info = pygame.display.Info()
+        screen_width, screen_height = info.current_w, info.current_h
+        game_map = pygame.image.load(map_paths[current_map_index]).convert()
+        screen = pygame.display.set_mode((screen_width, screen_height), pygame.NOFRAME)
+        #seting up the SAC
+        env = Env.CarEnv(game_map,screen)
+        #loaded the model I trained so far
+        #model = SAC.load("MlpPolicy5",env)
+        #pygame.init()  # Initialize Pygame
+        #this is for creating a new model
+        model = SAC("MlpPolicy", env, verbose=1)
+        #model.load("MlpPolicy3")
 
-    pygame.init()  # Initialize Pygame
-    #model.load("sac_car_policy")
+        # Train the agent for a set number of timesteps
+        model.learn(total_timesteps=100000)
+        # Save the trained model 
+        model.save("MlpPolicy_10k_default")
 
-    # Train the agent for a set number of timesteps
-    model.learn(total_timesteps=50000)
-    # Save the trained model
-    model.save("sac_car_policy2")
+        self.previous_position = self.position
 
-    obs, info = env.reset()
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-                pygame.quit()
-        action, _states = model.predict(obs, deterministic=True)
-        obs, reward, terminated, end, info = env.step(action)
-        env.render()  # Call render to draw the car
-        total_steps += 1  # Increment step count
-        # if end:
-        #     print("train done!")
-        #     #running = False
-        #     # env.close()
-        #     # pygame.quit()
-        # Debug output
-        if total_steps % 1000 == 0:
-            print(f"Total Steps: {total_steps}, Reward: {reward}")
-            print("obs",obs)
-            print("info", info)
-            print(model)
-            print("terminated",terminated)
-            print("end",env.car.is_alive())
-        if terminated:
-            obs, info = env.reset()
-        
-    env.close()
+        obs, info = env.reset()
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                    pygame.quit()
+            #print("step start", self.position)
+            action, _states = model.predict(obs, deterministic=True)
+            obs, reward, terminated, end, info = env.step(action)
+            #print("step done", self.position)
+            if end:
+                self.previous_position = [830, 920]
+            else:
+                self.previous_position = self.position #update the current car positon
+            env.render()  # Call render to draw the car
+            total_steps += 1  # Increment step count
+            
+            if total_steps % 500 == 0:
+                current_map_index = (current_map_index + 1) % len(map_paths)  # Rotate through maps
+                new_map_png = map_paths[current_map_index]
+                new_map = pygame.image.load(new_map_png).convert()
+                env = Env.CarEnv(new_map,screen)
+                obs, info = env.reset()
 
-    
+            if total_steps % 1000 == 0:
+                print(f"Total Steps: {total_steps}, Reward: {reward}")
+                print("obs",obs)
+                print("info", info)
+                print(model)
+                print("terminated",terminated)
+                print("end",env.car.is_alive())
+
+            if terminated:
+                obs, info = env.reset()
+            
+        env.close()
+
+
 
 if __name__ == "__main__":
-    runsimulation()
+    pygame.init()  # Initialize Pygame
+    info = pygame.display.Info()
+    screen_width, screen_height = info.current_w, info.current_h
+    pygame.display.set_mode((screen_width, screen_height), pygame.NOFRAME)
+    mycar = Car()
+    mycar.runsimulation()

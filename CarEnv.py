@@ -26,21 +26,25 @@ class CarEnv(gym.Env):
         self.game_map = game_map
         self.screen = screen
 
+
     def step(self, action):
         steering, throttle = action
         self.car.angle += steering * 10  # Scale steering for more effect
         self.car.speed = np.clip(self.car.speed + throttle * 2, 12, 30)  # Control speed
-        
         self.car.update(self.game_map) 
+      
         #check the car is still alive
         done = not self.car.is_alive()
 
         #try to see if the car still alive after running the trained model, so that I can use it for somewhere else
         #end = self.car.is_alive()
-        
-        reward = self.car.get_reward()
+        # if done:
+        #     reward = -15 #get punishment if the car crash
+        # else:    
+        #     reward = self.car.get_reward(self.car.previous_position)
+        reward = self.car.get_reward(self.car.previous_position)
         observation = self._get_observation()
-
+        #self.car.previous_position = self.car.position
         #I just copy the example for the info, have it there just for requirement. No sure how to adject it.
         info = {
         "TimeLimit.truncated": done,  # Example key, adjust as necessary
