@@ -26,6 +26,7 @@ CAR_SIZE_Y = 60
 BORDER_COLOR = (255, 255, 255, 255) # Color To Crash on Hit
 
 current_generation = 0 # Generation counter
+sharp_turn_threshold = 0.1  # Example value, adjust based on curvature calculation
 
 class Car:
 
@@ -120,10 +121,10 @@ class Car:
         length = 0.5 * CAR_SIZE_X
         left_top = [self.center[0] + math.cos(math.radians(360 - (self.angle + 30))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 30))) * length]
         right_top = [self.center[0] + math.cos(math.radians(360 - (self.angle + 150))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 150))) * length]
-        # left_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 210))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 210))) * length]
-        # right_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 330))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 330))) * length]
-        # self.corners = [left_top, right_top, left_bottom, right_bottom]
-        self.corners = [left_top, right_top]
+        left_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 210))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 210))) * length]
+        right_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 330))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 330))) * length]
+        self.corners = [left_top, right_top, left_bottom, right_bottom]
+        #self.corners = [left_top, right_top]
 
 
         # Check Collisions And Clear Radars
@@ -147,17 +148,38 @@ class Car:
     def is_alive(self):
         # Basic Alive Function
         return self.alive
+    
+    def calculate_curvature(self,radar_data):
+        # Assuming radar_data contains distances in different directions
+        left_dist = radar_data[0]  # Example: Leftmost radar distance
+        right_dist = radar_data[4]  # Example: Rightmost radar distance
+
+        # Approximate curvature: difference in left and right distances divided by total angle span
+        curvature = abs(left_dist - right_dist) / 90.0  # Assuming the total span between radar angles is 90 degrees
+        return curvature
+
 
     def get_reward(self, last_position):
         # Calculate Reward (Maybe Change?)
         # return self.distance / 50.0
-        return self.distance / (CAR_SIZE_X / 2)
+        # return self.distance / (CAR_SIZE_X / 2)
         #print("last",last_position)
         #print("now:", self.position)
-        # X = self.position[0]
-        # Y = self.position[1]
-        # distance = np.sqrt(float(X-last_position[0])**2 + float(Y-last_position[1])**2)
-        # return distance/(CAR_SIZE_X / 2)
+        radar_data = self.get_data()
+        #print(radar_data)
+        curvature =  self.calculate_curvature(radar_data)
+        X = self.position[0]
+        Y = self.position[1]
+        distance = np.sqrt(float(X-last_position[0])**2 + float(Y-last_position[1])**2)
+        reward =  distance/(CAR_SIZE_X / 2)
+        if not self.is_alive():
+            reward -= 15  # Harsh penalty for crashin
+
+        sharp_turn_threshold = 0.3  # Example threshold for sharp curvature
+        max_speed = 30.0  # Maximum desired speed
+        if curvature > sharp_turn_threshold:
+            reward += (max_speed - self.speed) * 0.1  # Encourage slowing down in sharp turns
+        return reward
 
     def rotate_center(self, image, angle):
         # Rotate The Rectangle
@@ -261,7 +283,7 @@ class Car:
     def runsimulation(self):
         #a timer to force stop
         total_steps = 0
-
+        
         map_paths = ['map.png', 'map2.png', 'map3.png','map4.png','map5.png']
         current_map_index = 0  # Start with the first map
 
@@ -270,10 +292,11 @@ class Car:
         screen_width, screen_height = info.current_w, info.current_h
         game_map = pygame.image.load(map_paths[current_map_index]).convert()
         screen = pygame.display.set_mode((screen_width, screen_height), pygame.NOFRAME)
+        swap_interval = 1000
         #seting up the SAC
         env = Env.CarEnv(game_map,screen)
         #loaded the model I trained so far
-        #model = SAC.load("MlpPolicy5",env)
+        #model = SAC.load("MlpPolicy_25k_improved2",env)
         #pygame.init()  # Initialize Pygame
         #this is for creating a new model
         model = SAC("MlpPolicy", env, verbose=1)
@@ -282,8 +305,9 @@ class Car:
         # Train the agent for a set number of timesteps
         model.learn(total_timesteps=100000)
         # Save the trained model 
-        model.save("MlpPolicy_10k_default")
+        model.save("MlpPolicy_25k_improved3")
 
+        # Initialize previous position
         self.previous_position = self.position
 
         obs, info = env.reset()
@@ -293,18 +317,21 @@ class Car:
                 if event.type == pygame.QUIT:
                     running = False
                     pygame.quit()
-            #print("step start", self.position)
+            #print("step start", self.previous_position)
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, terminated, end, info = env.step(action)
-            #print("step done", self.position)
             if end:
                 self.previous_position = [830, 920]
             else:
-                self.previous_position = self.position #update the current car positon
+                self.previous_position = env.car.position #update the current car positon
+            #print("step done", self.previous_position)
+
             env.render()  # Call render to draw the car
             total_steps += 1  # Increment step count
             
-            if total_steps % 500 == 0:
+            
+            if total_steps % 5000 == 0:
+                swap_interval = min(1000, swap_interval + 1000)  # Increase interval gradually
                 current_map_index = (current_map_index + 1) % len(map_paths)  # Rotate through maps
                 new_map_png = map_paths[current_map_index]
                 new_map = pygame.image.load(new_map_png).convert()
