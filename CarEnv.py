@@ -30,7 +30,7 @@ class CarEnv(gym.Env):
     def step(self, action):
         steering, throttle = action
         self.car.angle += steering * 10  # Scale steering for more effect
-        self.car.speed = np.clip(self.car.speed + throttle * 2, 12, 30)  # Control speed
+        self.car.speed = np.clip(self.car.speed + throttle * 2, 5, 30)  # Control speed
         self.car.update(self.game_map) 
       
         #check the car is still alive
@@ -69,7 +69,7 @@ class CarEnv(gym.Env):
     
     #this code I refered ChatGpt, I am not really know how to get observation
     def _get_observation(self):
-        radar_distances = np.array(self.car.get_data()) / 300.0  # Normalize radar distances
+        radar_distances = np.array(self.car.get_data()) / 25.0  # Normalize radar distances
         speed = self.car.speed / 30.0  # Normalize speed
         angle = self.car.angle / 360.0  # Normalize angle
         

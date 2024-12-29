@@ -121,10 +121,10 @@ class Car:
         length = 0.5 * CAR_SIZE_X
         left_top = [self.center[0] + math.cos(math.radians(360 - (self.angle + 30))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 30))) * length]
         right_top = [self.center[0] + math.cos(math.radians(360 - (self.angle + 150))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 150))) * length]
-        left_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 210))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 210))) * length]
-        right_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 330))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 330))) * length]
-        self.corners = [left_top, right_top, left_bottom, right_bottom]
-        #self.corners = [left_top, right_top]
+        #left_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 210))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 210))) * length]
+        #right_bottom = [self.center[0] + math.cos(math.radians(360 - (self.angle + 330))) * length, self.center[1] + math.sin(math.radians(360 - (self.angle + 330))) * length]
+        #self.corners = [left_top, right_top, left_bottom, right_bottom]
+        self.corners = [left_top, right_top]
 
 
         # Check Collisions And Clear Radars
@@ -132,9 +132,10 @@ class Car:
         self.radars.clear()
 
         # From -90 To 120 With Step-Size 45 Check Radar
-        for d in range(-90, 120, 45):
-            self.check_radar(d, game_map)
-
+        # for d in range(-90, 120, 45):
+        #     self.check_radar(d, game_map)
+        for d in range(-45, 135, 90):
+             self.check_radar(d, game_map)
 
     def get_data(self):
         # Get Distances To Border
@@ -148,16 +149,6 @@ class Car:
     def is_alive(self):
         # Basic Alive Function
         return self.alive
-    
-    def calculate_curvature(self,radar_data):
-        # Assuming radar_data contains distances in different directions
-        left_dist = radar_data[0]  # Example: Leftmost radar distance
-        right_dist = radar_data[4]  # Example: Rightmost radar distance
-
-        # Approximate curvature: difference in left and right distances divided by total angle span
-        curvature = abs(left_dist - right_dist) / 90.0  # Assuming the total span between radar angles is 90 degrees
-        return curvature
-
 
     def get_reward(self, last_position):
         # Calculate Reward (Maybe Change?)
@@ -165,20 +156,26 @@ class Car:
         # return self.distance / (CAR_SIZE_X / 2)
         #print("last",last_position)
         #print("now:", self.position)
-        radar_data = self.get_data()
         #print(radar_data)
-        curvature =  self.calculate_curvature(radar_data)
+
         X = self.position[0]
         Y = self.position[1]
         distance = np.sqrt(float(X-last_position[0])**2 + float(Y-last_position[1])**2)
         reward =  distance/(CAR_SIZE_X / 2)
         if not self.is_alive():
-            reward -= 15  # Harsh penalty for crashin
+            reward -= 30  # Harsh penalty for crashin
 
-        sharp_turn_threshold = 0.3  # Example threshold for sharp curvature
-        max_speed = 30.0  # Maximum desired speed
-        if curvature > sharp_turn_threshold:
-            reward += (max_speed - self.speed) * 0.1  # Encourage slowing down in sharp turns
+        # sharp_turn_threshold = 0.3  # Example threshold for sharp curvature
+        # max_speed = 30.0  # Maximum desired speed
+        # if curvature > sharp_turn_threshold:
+        #     reward += (max_speed - self.speed) * 0.15  # Encourage slowing down in sharp turns
+        stay_center = abs(self.radars[0][1]-self.radars[1][1])
+        reward -= stay_center * 0.3  # Penalize deviation from center
+
+        desired_speed = 15.0
+        speed_penalty = 0.1 * (self.speed - desired_speed) ** 2
+        reward -= speed_penalty
+
         return reward
 
     def rotate_center(self, image, angle):
@@ -282,30 +279,32 @@ class Car:
 
     def runsimulation(self):
         #a timer to force stop
-        total_steps = 0
-        
+        total_steps = 800000
         map_paths = ['map.png', 'map2.png', 'map3.png','map4.png','map5.png']
+        map_weights = [1, 2, 3, 4, 5]
+        weight_sum = np.sum(map_weights)
         current_map_index = 0  # Start with the first map
+        timeforcurrentmap = int((1/weight_sum) * total_steps)
 
         #setting up the pygame
         info = pygame.display.Info()
         screen_width, screen_height = info.current_w, info.current_h
         game_map = pygame.image.load(map_paths[current_map_index]).convert()
-        screen = pygame.display.set_mode((screen_width, screen_height), pygame.NOFRAME)
-        swap_interval = 1000
+        screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    
         #seting up the SAC
         env = Env.CarEnv(game_map,screen)
         #loaded the model I trained so far
-        #model = SAC.load("MlpPolicy_25k_improved2",env)
+        model = SAC.load("MlpPolicy_200k_-30_new_2_9",env, ent_coef=0.01, tensorboard_log="./sac_car_env/")
         #pygame.init()  # Initialize Pygame
         #this is for creating a new model
-        model = SAC("MlpPolicy", env, verbose=1)
+        #model = SAC("MlpPolicy", env,verbose=1, ent_coef=0.01, tensorboard_log="./sac_car_env/")
         #model.load("MlpPolicy3")
 
         # Train the agent for a set number of timesteps
-        model.learn(total_timesteps=100000)
+        #model.learn(total_timesteps=total_steps, tb_log_name="SAC_run")
         # Save the trained model 
-        model.save("MlpPolicy_25k_improved3")
+        #model.save("MlpPolicy_200k_-30_new_2_9")
 
         # Initialize previous position
         self.previous_position = self.position
@@ -330,15 +329,17 @@ class Car:
             total_steps += 1  # Increment step count
             
             
-            if total_steps % 5000 == 0:
-                swap_interval = min(1000, swap_interval + 1000)  # Increase interval gradually
+            #if total_steps % timeforcurrentmap == 0:
+            if total_steps % 3000 == 0:
+                print("time step for current map : ",timeforcurrentmap)
+                timeforcurrentmap = int([current_map_index + 1]/weight_sum * total_steps) # Increase interval gradually
                 current_map_index = (current_map_index + 1) % len(map_paths)  # Rotate through maps
                 new_map_png = map_paths[current_map_index]
                 new_map = pygame.image.load(new_map_png).convert()
                 env = Env.CarEnv(new_map,screen)
                 obs, info = env.reset()
 
-            if total_steps % 1000 == 0:
+            if total_steps % 5000 == 0:
                 print(f"Total Steps: {total_steps}, Reward: {reward}")
                 print("obs",obs)
                 print("info", info)
@@ -357,6 +358,6 @@ if __name__ == "__main__":
     pygame.init()  # Initialize Pygame
     info = pygame.display.Info()
     screen_width, screen_height = info.current_w, info.current_h
-    pygame.display.set_mode((screen_width, screen_height), pygame.NOFRAME)
+    pygame.display.set_mode((WIDTH, HEIGHT))
     mycar = Car()
     mycar.runsimulation()
