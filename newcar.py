@@ -169,8 +169,8 @@ class Car:
         # max_speed = 30.0  # Maximum desired speed
         # if curvature > sharp_turn_threshold:
         #     reward += (max_speed - self.speed) * 0.15  # Encourage slowing down in sharp turns
-        stay_center = abs(self.radars[0][1]-self.radars[1][1])
-        reward -= stay_center * 0.3  # Penalize deviation from center
+        stay_center = abs(self.radars[0][1]-self.radars[1][1]) 
+        reward -= stay_center * 0.1  # Penalize deviation from center
 
         desired_speed = 15.0
         speed_penalty = 0.1 * (self.speed - desired_speed) ** 2
@@ -189,7 +189,7 @@ class Car:
     
 
 
-#This is the default neat ML
+#This is the default neat ML which i didn't use
 # def run_simulation(genomes, config):
     
 #     # Empty Collections For Nets and Cars
@@ -279,7 +279,7 @@ class Car:
 
     def runsimulation(self):
         #a timer to force stop
-        total_steps = 800000
+        total_steps = 50000
         map_paths = ['map.png', 'map2.png', 'map3.png','map4.png','map5.png']
         map_weights = [1, 2, 3, 4, 5]
         weight_sum = np.sum(map_weights)
@@ -295,16 +295,16 @@ class Car:
         #seting up the SAC
         env = Env.CarEnv(game_map,screen)
         #loaded the model I trained so far
-        model = SAC.load("MlpPolicy_200k_-30_new_2_9",env, ent_coef=0.01, tensorboard_log="./sac_car_env/")
+        model = SAC.load("MlpPolicy_50k_best_ver2",env, tensorboard_log="./sac_car_env/")
         #pygame.init()  # Initialize Pygame
         #this is for creating a new model
-        #model = SAC("MlpPolicy", env,verbose=1, ent_coef=0.01, tensorboard_log="./sac_car_env/")
+        #model = SAC("MlpPolicy", env,verbose=1, tensorboard_log="./sac_car_env/")
         #model.load("MlpPolicy3")
 
         # Train the agent for a set number of timesteps
         #model.learn(total_timesteps=total_steps, tb_log_name="SAC_run")
         # Save the trained model 
-        #model.save("MlpPolicy_200k_-30_new_2_9")
+        #model.save("MlpPolicy_50k_best_ver2")
 
         # Initialize previous position
         self.previous_position = self.position
@@ -320,7 +320,7 @@ class Car:
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, terminated, end, info = env.step(action)
             if end:
-                self.previous_position = [830, 920]
+                self.previous_position = [830, 920] #if the car crash go back to initial position
             else:
                 self.previous_position = env.car.position #update the current car positon
             #print("step done", self.previous_position)
@@ -329,8 +329,8 @@ class Car:
             total_steps += 1  # Increment step count
             
             
-            #if total_steps % timeforcurrentmap == 0:
-            if total_steps % 3000 == 0:
+            #if total_steps % timeforcurrentmap == 0: #for training, comment out when testing
+            if total_steps % 3000 == 0: #testing purpose comment out when training
                 print("time step for current map : ",timeforcurrentmap)
                 timeforcurrentmap = int([current_map_index + 1]/weight_sum * total_steps) # Increase interval gradually
                 current_map_index = (current_map_index + 1) % len(map_paths)  # Rotate through maps

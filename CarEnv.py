@@ -69,7 +69,7 @@ class CarEnv(gym.Env):
     
     #this code I refered ChatGpt, I am not really know how to get observation
     def _get_observation(self):
-        radar_distances = np.array(self.car.get_data()) / 25.0  # Normalize radar distances
+        radar_distances = np.array(self.car.get_data()) / 25.0  # Normalize radar distances # i tried to change values here and the training improved
         speed = self.car.speed / 30.0  # Normalize speed
         angle = self.car.angle / 360.0  # Normalize angle
         
