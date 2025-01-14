@@ -30,7 +30,7 @@ class CarEnv(gym.Env):
     def step(self, action):
         steering, throttle = action
         self.car.angle += steering * 10  # Scale steering for more effect
-        self.car.speed = np.clip(self.car.speed + throttle * 2, 5, 30)  # Control speed
+        self.car.speed = np.clip(self.car.speed + throttle * 2, 10, 30)  # Control speed
         self.car.update(self.game_map) 
       
         #check the car is still alive
@@ -42,7 +42,11 @@ class CarEnv(gym.Env):
         #     reward = -15 #get punishment if the car crash
         # else:    
         #     reward = self.car.get_reward(self.car.previous_position)
-        reward = self.car.get_reward(self.car.previous_position)
+        self.car.check_checkpoint_reached(self.car.position, self.game_map)
+        if self.car.checkpoint_reached > 5:
+            self.car.checkpoint_reached = 5
+            
+        reward = self.car.get_reward(self.car.previous_position,self.game_map)
         observation = self._get_observation()
         #self.car.previous_position = self.car.position
         #I just copy the example for the info, have it there just for requirement. No sure how to adject it.
@@ -60,6 +64,7 @@ class CarEnv(gym.Env):
             random.seed(seed)
         self.car = newcar.Car()
         observation = self._get_observation()
+        self.car.checkpoint_reached = 0
         return observation, {}
 
     def render(self):

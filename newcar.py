@@ -24,9 +24,11 @@ CAR_SIZE_X = 60
 CAR_SIZE_Y = 60
 
 BORDER_COLOR = (255, 255, 255, 255) # Color To Crash on Hit
+CHECKPOINT_COLOR = (227, 24, 45, 255) # Color To Checkpoint
 
 current_generation = 0 # Generation counter
 sharp_turn_threshold = 0.1  # Example value, adjust based on curvature calculation
+
 
 class Car:
 
@@ -35,7 +37,6 @@ class Car:
         self.sprite = pygame.image.load('car.png').convert() # Convert Speeds Up A Lot
         self.sprite = pygame.transform.scale(self.sprite, (CAR_SIZE_X, CAR_SIZE_Y))
         self.rotated_sprite = self.sprite 
-
         # self.position = [690, 740] # Starting Position
         self.position = [830, 920] # Starting Position
         self.angle = 0
@@ -52,6 +53,16 @@ class Car:
         self.previous_position = [830, 920]
         self.distance = 0 # Distance Driven
         self.time = 0 # Time Passed
+        self.total_checkpoints = 5 # Total Checkpoints Passed
+        self.checkpoint_reached = 0
+
+        self.GOAL_AREA = {
+        "x_min": 800,  # Minimum x-coordinate of the goal
+        "x_max": 829,  # Maximum x-coordinate of the goal
+        "y_min": 880,  # Minimum y-coordinate of the goal
+        "y_max": 960,  # Maximum y-coordinate of the goal
+}
+
 
     def draw(self, screen):
         if isinstance(self.position, (list, tuple)) and len(self.position) == 2:
@@ -73,6 +84,7 @@ class Car:
             # Assumes Rectangle
             if game_map.get_at((int(point[0]), int(point[1]))) == BORDER_COLOR:
                 self.alive = False
+                #self.checkpoint_reached = 0 # Reset checkpoints
                 break
 
     def check_radar(self, degree, game_map):
@@ -145,12 +157,29 @@ class Car:
             return_values[i] = int(radar[1] / 30)
 
         return return_values
+    
+    def check_goal_reached(self, car_position):
+        car_x, car_y = car_position  # Get the car's current position
+        
+        if (self.GOAL_AREA["x_min"] <= car_x <= self.GOAL_AREA["x_max"] and 
+            self.GOAL_AREA["y_min"] <= car_y <= self.GOAL_AREA["y_max"]):
+            return True  # Goal is reached
+        return False
 
+    def check_checkpoint_reached(self, car_position, game_map):
+        #print(self.checkpoint_reached, "checkpoint reached")
+        x, y = int((car_position[0])), int((car_position[1]))
+        #color = game_map.get_at((x, y))[:4]  # Get the RGB color of the current position
+        #print("color",color)
+        if game_map.get_at((x,  y)) == CHECKPOINT_COLOR:
+            self.checkpoint_reached += 1
+            #print("checkpoint reached", self.checkpoint_reached)
+        
     def is_alive(self):
         # Basic Alive Function
         return self.alive
 
-    def get_reward(self, last_position):
+    def get_reward(self, last_position, game_map):
         # Calculate Reward (Maybe Change?)
         # return self.distance / 50.0
         # return self.distance / (CAR_SIZE_X / 2)
@@ -160,7 +189,9 @@ class Car:
 
         X = self.position[0]
         Y = self.position[1]
+        goal = [830, 920]
         distance = np.sqrt(float(X-last_position[0])**2 + float(Y-last_position[1])**2)
+        
         reward =  distance/(CAR_SIZE_X / 2)
         if not self.is_alive():
             reward -= 30  # Harsh penalty for crashin
@@ -172,10 +203,22 @@ class Car:
         stay_center = abs(self.radars[0][1]-self.radars[1][1]) 
         reward -= stay_center * 0.1  # Penalize deviation from center
 
-        desired_speed = 15.0
-        speed_penalty = 0.1 * (self.speed - desired_speed) ** 2
+        desired_speed = 12.0
+        speed_penalty = 0.5 * (self.speed - desired_speed) ** 2
         reward -= speed_penalty
 
+        # Check if the goal is reached
+        if self.check_goal_reached(self.position):
+            reward += 200  # Reward for reaching the goal   
+            #print("goal reached")
+        x, y = int(X), int(Y)
+        reward += 10 * self.checkpoint_reached 
+        
+        dis_from_goal = min(0,self.total_checkpoints - self.checkpoint_reached)
+        reward -= dis_from_goal * 8
+        color = game_map.get_at((x, y))[:3]
+        #if color != (0,0,0) and color !=(255, 255, 255) and color !=((28, 28, 28)):
+            #print(color)
         return reward
 
     def rotate_center(self, image, angle):
@@ -279,7 +322,7 @@ class Car:
 
     def runsimulation(self):
         #a timer to force stop
-        total_steps = 50000
+        total_steps = 60000
         map_paths = ['map.png', 'map2.png', 'map3.png','map4.png','map5.png']
         map_weights = [1, 2, 3, 4, 5]
         weight_sum = np.sum(map_weights)
@@ -295,16 +338,16 @@ class Car:
         #seting up the SAC
         env = Env.CarEnv(game_map,screen)
         #loaded the model I trained so far
-        model = SAC.load("MlpPolicy_50k_best_ver2",env, tensorboard_log="./sac_car_env/")
+        model = SAC.load("MlpPolicy_try_5",env, tensorboard_log="./sac_car_env/")
         #pygame.init()  # Initialize Pygame
         #this is for creating a new model
         #model = SAC("MlpPolicy", env,verbose=1, tensorboard_log="./sac_car_env/")
         #model.load("MlpPolicy3")
 
         # Train the agent for a set number of timesteps
-        #model.learn(total_timesteps=total_steps, tb_log_name="SAC_run")
+        model.learn(total_timesteps=total_steps, tb_log_name="SAC_run")
         # Save the trained model 
-        #model.save("MlpPolicy_50k_best_ver2")
+        model.save("MlpPolicy_try_5")
 
         # Initialize previous position
         self.previous_position = self.position
@@ -349,6 +392,7 @@ class Car:
 
             if terminated:
                 obs, info = env.reset()
+                
             
         env.close()
 
