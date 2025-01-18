@@ -200,22 +200,22 @@ class Car:
         # max_speed = 30.0  # Maximum desired speed
         # if curvature > sharp_turn_threshold:
         #     reward += (max_speed - self.speed) * 0.15  # Encourage slowing down in sharp turns
-        stay_center = abs(self.radars[0][1]-self.radars[1][1]) 
-        reward -= stay_center * 0.1  # Penalize deviation from center
+        # stay_center = abs(self.radars[0][1]-self.radars[1][1]) 
+        # reward -= stay_center * 0.1  # Penalize deviation from center
 
-        desired_speed = 12.0
-        speed_penalty = 0.5 * (self.speed - desired_speed) ** 2
-        reward -= speed_penalty
+        # desired_speed = 12.0
+        # speed_penalty = 0.5 * (self.speed - desired_speed) ** 2
+        # reward -= speed_penalty
 
         # Check if the goal is reached
         if self.check_goal_reached(self.position):
             reward += 200  # Reward for reaching the goal   
             #print("goal reached")
         x, y = int(X), int(Y)
-        reward += 10 * self.checkpoint_reached 
+        reward += 15 * self.checkpoint_reached 
         
         dis_from_goal = min(0,self.total_checkpoints - self.checkpoint_reached)
-        reward -= dis_from_goal * 8
+        reward -= dis_from_goal * 15
         color = game_map.get_at((x, y))[:3]
         #if color != (0,0,0) and color !=(255, 255, 255) and color !=((28, 28, 28)):
             #print(color)
@@ -322,7 +322,7 @@ class Car:
 
     def runsimulation(self):
         #a timer to force stop
-        total_steps = 60000
+        total_steps = 50000
         map_paths = ['map.png', 'map2.png', 'map3.png','map4.png','map5.png']
         map_weights = [1, 2, 3, 4, 5]
         weight_sum = np.sum(map_weights)
@@ -338,7 +338,7 @@ class Car:
         #seting up the SAC
         env = Env.CarEnv(game_map,screen)
         #loaded the model I trained so far
-        model = SAC.load("MlpPolicy_try_5",env, tensorboard_log="./sac_car_env/")
+        #model = SAC.load("MlpPolicy_try_7",env, tensorboard_log="./sac_car_env/")
         #pygame.init()  # Initialize Pygame
         #this is for creating a new model
         #model = SAC("MlpPolicy", env,verbose=1, tensorboard_log="./sac_car_env/")
@@ -347,7 +347,7 @@ class Car:
         # Train the agent for a set number of timesteps
         model.learn(total_timesteps=total_steps, tb_log_name="SAC_run")
         # Save the trained model 
-        model.save("MlpPolicy_try_5")
+        model.save("MlpPolicy_try_8")
 
         # Initialize previous position
         self.previous_position = self.position
