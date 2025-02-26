@@ -12,7 +12,9 @@ import pygame
 import gymnasium as gym
 from stable_baselines3 import SAC
 import CarEnv as Env
-
+import pickle
+import os
+from sklearn.neighbors import NearestNeighbors
 # Constants
 # WIDTH = 1600
 # HEIGHT = 880
@@ -26,12 +28,72 @@ CAR_SIZE_Y = 60
 BORDER_COLOR = (255, 255, 255, 255) # Color To Crash on Hit
 CHECKPOINT_COLOR = (227, 24, 45, 255) # Color To Checkpoint
 
-current_generation = 0 # Generation counter
-sharp_turn_threshold = 0.1  # Example value, adjust based on curvature calculation
+class Dataset:
+    def __init__(self):
+        self.safe_data_set = np.empty((0, 4))  # Initialize with an empty array
+        self.unsafe_data_set = np.empty((0, 4)) 
+        self.load_safe_data()  # Load the data if it exists
+        self.load_unsafe_data()
+
+    def load_safe_data(self):
+        """Load previously collected data if exists."""
+        if os.path.exists("data/safe_data_set.pkl"):
+            # Check if the file is not empty
+            if os.path.getsize("data/safe_data_set.pkl") > 0:
+                try:
+                    with open("data/safe_data_set.pkl", "rb") as f:
+                        self.safe_data_set = pickle.load(f)
+                    print("Loaded safe dataset.")
+                except EOFError:
+                    print("File is empty or corrupted, initializing a new dataset.")
+                    self.safe_data_set = np.empty((0, 4))  # Initialize as empty if the file is corrupted
+            else:
+                print("File is empty, initializing a new dataset.")
+                self.safe_data_set = np.empty((0, 4))  # Initialize as empty
+        else:
+            print("No dataset found, initializing a new dataset.")
+            self.safe_data_set = np.empty((0, 4))  # Initialize as empty
+
+    def load_unsafe_data(self):
+        """Load previously collected data if exists."""
+        if os.path.exists("data/unsafe_data_set.pkl"):
+            # Check if the file is not empty
+            if os.path.getsize("data/unsafe_data_set.pkl") > 0:
+                try:
+                    with open("data/unsafe_data_set.pkl", "rb") as f:
+                        self.unsafe_data_set = pickle.load(f)
+                    print("Loaded unsafe dataset.")
+                except EOFError:
+                    print("File is empty or corrupted, initializing a new dataset.")
+                    self.unsafe_data_set = np.empty((0, 4))  # Initialize as empty if the file is corrupted
+            else:
+                print("File is empty, initializing a new dataset.")
+                self.unsafe_data_set = np.empty((0, 4))  # Initialize as empty
+        else:
+            print("No dataset found, initializing a new dataset.")
+            self.unsafe_data_set = np.empty((0, 4))  # Initialize as empty
+
+    def save_safe_data(self):
+        """Save collected data to file."""
+        os.makedirs("data", exist_ok=True)
+        save_path = os.path.join("data", "safe_data_set3.pkl")
+        with open(save_path, "wb") as f:
+            pickle.dump(self.safe_data_set, f)
+        print("Dataset saved.")
+    
+    def save_unsafe_data(self):
+        """Save collected data to file."""
+        os.makedirs("data", exist_ok=True)
+        save_path = os.path.join("data", "unsafe_data_set.pkl")
+        with open(save_path, "wb") as f:
+            pickle.dump(self.unsafe_data_set, f)
+        print("Dataset saved.")
+
+# Create Dataset object
+dataset = Dataset()
 
 
 class Car:
-
     def __init__(self):
         # Load Car Sprite and Rotate
         self.sprite = pygame.image.load('car.png').convert() # Convert Speeds Up A Lot
@@ -56,6 +118,11 @@ class Car:
         self.total_checkpoints = 5 # Total Checkpoints Passed
         self.checkpoint_reached = 0
 
+        self.max_steps = 1000  # Fixed horizon length
+        self.current_step = 0
+        self.car_safe_data_set = dataset.safe_data_set
+        self.unsafe_data_set = []
+
         self.GOAL_AREA = {
         "x_min": 800,  # Minimum x-coordinate of the goal
         "x_max": 829,  # Maximum x-coordinate of the goal
@@ -79,25 +146,36 @@ class Car:
 
     def check_collision(self, game_map):
         self.alive = True
+        map_width, map_height = game_map.get_size()
         for point in self.corners:
             # If Any Corner Touches Border Color -> Crash
             # Assumes Rectangle
-            if game_map.get_at((int(point[0]), int(point[1]))) == BORDER_COLOR:
+            x,y = int(point[0]), int(point[1])
+            if 0 <= x < map_width and 0 <= y < map_height:
+                if game_map.get_at((int(point[0]), int(point[1]))) == BORDER_COLOR :
+                    self.alive = False
+                    #self.checkpoint_reached = 0 # Reset checkpoints
+                    break
+            else:
                 self.alive = False
-                #self.checkpoint_reached = 0 # Reset checkpoints
                 break
 
     def check_radar(self, degree, game_map):
         length = 0
+        map_width, map_height = game_map.get_size()
         x = int(self.center[0] + math.cos(math.radians(360 - (self.angle + degree))) * length)
         y = int(self.center[1] + math.sin(math.radians(360 - (self.angle + degree))) * length)
 
         # While We Don't Hit BORDER_COLOR AND length < 300 (just a max) -> go further and further
-        while not game_map.get_at((x, y)) == BORDER_COLOR and length < 300:
+        while length < 300:
             length = length + 1
             x = int(self.center[0] + math.cos(math.radians(360 - (self.angle + degree))) * length)
             y = int(self.center[1] + math.sin(math.radians(360 - (self.angle + degree))) * length)
-
+            if 0 <= x < map_width and 0 <= y < map_height:
+                if game_map.get_at((x, y)) == BORDER_COLOR:
+                    break  # Stop if we hit the border
+            else:
+                break  # Stop if out of bounds
         # Calculate Distance To Border And Append To Radars List
         dist = int(math.sqrt(math.pow(x - self.center[0], 2) + math.pow(y - self.center[1], 2)))
         self.radars.append([(x, y), dist])
@@ -106,7 +184,7 @@ class Car:
         # Set The Speed To 20 For The First Time
         # Only When Having 4 Output Nodes With Speed Up and Down
         if not self.speed_set:
-            self.speed = 20
+            self.speed = 10
             self.speed_set = True
 
         # Get Rotated Sprite And Move Into The Right X-Direction
@@ -191,31 +269,37 @@ class Car:
         Y = self.position[1]
         goal = [830, 920]
         distance = np.sqrt(float(X-last_position[0])**2 + float(Y-last_position[1])**2)
-        
-        reward =  distance/(CAR_SIZE_X / 2)
-        if not self.is_alive():
-            reward -= 40  # Harsh penalty for crashin
+        reward =  distance/(CAR_SIZE_X)
 
-        # sharp_turn_threshold = 0.3  # Example threshold for sharp curvature
-        # max_speed = 30.0  # Maximum desired speed
-        # if curvature > sharp_turn_threshold:
-        #     reward += (max_speed - self.speed) * 0.15  # Encourage slowing down in sharp turns
-        # stay_center = abs(self.radars[0][1]-self.radars[1][1]) 
-        # reward -= stay_center * 0.1  # Penalize deviation from center
+        if not self.is_alive():
+            reward -= 25  # Harsh penalty for crashin
+            remaining_steps = self.max_steps - self.current_step
+            early_crash_penalty = 30 * (remaining_steps / self.max_steps)  # More penalty for early crashes
+            reward -= early_crash_penalty 
+            
+
+        max_derivation = 30 # for not penalitzing too much
+        stay_center = abs(self.radars[0][1]-self.radars[1][1]) /max_derivation
+        reward -= stay_center * 5  # Penalize deviation from center
 
         desired_speed = 10.0
-        speed_penalty =  (self.speed - desired_speed) ** 2
+        speed_penalty =  2 * (self.speed - desired_speed) ** 2
         reward -= speed_penalty
+
 
         # Check if the goal is reached
         if self.check_goal_reached(self.position):
             reward += 200  # Reward for reaching the goal   
-            #print("goal reached")
-        x, y = int(X), int(Y)
-        reward += 15 * self.checkpoint_reached 
+        #     #print("goal reached")
+
+        reward += 0.5 #survival bonus
+        # x, y = int(X), int(Y)
+
+        #reward += 15 * self.checkpoint_reached
         
-        dis_from_goal = min(0,self.total_checkpoints - self.checkpoint_reached)
-        reward -= dis_from_goal * 15
+        #dis_from_goal = max(0,self.total_checkpoints - self.checkpoint_reached)
+        #reward -= dis_from_goal 
+        
         #color = game_map.get_at((x, y))[:3]
         #if color != (0,0,0) and color !=(255, 255, 255) and color !=((28, 28, 28)):
             #print(color)
@@ -230,38 +314,153 @@ class Car:
         rotated_image = rotated_image.subsurface(rotated_rectangle).copy()
         return rotated_image
     
+    def set_start(self, game_map):
+        # Collect data for training
+        time = 0
+        map_width, map_height = game_map.get_width(), game_map.get_height()
+        while True:
+            Ran_X = random.randint(0, map_width - 1)
+            Ran_Y = random.randint(0, map_height - 1)
+            start = [Ran_X, Ran_Y]
+            time += 1
+            # Check if the sampled point is a valid starting location
+            if game_map.get_at(start) != BORDER_COLOR:  # Check RGB values match
+                self.position = start  # Set the car's position
+                self.angle = random.uniform(-180, 180)  # Randomize starting angle
+                self.speed = 0  # Reset speed
+                #print(f"Car starting position: {self.position}, angle: {start[:3]}")
+                break
+            else:
+                if time % 3000 == 0:
+                    print("Loading initial starting point...")
+
+    def get_safe_data(self):
+        if len((dataset.safe_data_set)) < 20000:
+            print(len((dataset.safe_data_set)))
+            if self.is_alive():
+                new_data = np.array([[self.position[0], self.position[1], self.angle, self.speed]])
+                #print(new_data)
+                new_data = np.array(new_data)  # Ensure new_data is a numpy array
+                if new_data.shape[1] == 4:  # Check if it has 4 columns
+                    dataset.safe_data_set = np.vstack((dataset.safe_data_set, new_data))
+                else:
+                    print("Error: new_data does not have 4 columns.")
+                
+        if len((dataset.safe_data_set)) >= 20000:
+            dataset.save_safe_data()
+            sys.exit(0)
+
+
+    def get_unsafe_data(self):
+        M = 4000
+        k = 18  # Number of neighbors to check
+        epsilon = 160  # Small threshold for closeness check
+        safe_count_threshold = k // 2  # Majority rule
+        all_dist = []
+        #Xc = np.random.uniform(low=[0, 0, -180, 0], high=[1919, 1079, 180, 30], size=(M, 4))
+        while len(dataset.unsafe_data_set) < 20000:
+            #generate a random Xc set at each iteration
+            #Xs U Xu U Xc 
+            Xc = np.random.uniform(low=[0, 0, -180, 0], high=[1919, 1079, 180, 30], size=(M, 4))
+            combined_data = np.vstack((dataset.safe_data_set, dataset.unsafe_data_set, Xc))
+            #KNN to find nearest neigbor
+            knn = NearestNeighbors(n_neighbors=5, algorithm='ball_tree').fit(combined_data)
+            distances, neighbors  = knn.kneighbors(Xc)
+            # all_dist.append(distances)
+
+            to_remove_indices = []
+            for i, candidate in enumerate(Xc):
+                #find the distance between current point 
+                distances = np.linalg.norm(dataset.safe_data_set - np.array(candidate), axis=1)
+                k_nearest_indices = np.argsort(distances)[:k]
+                #print(dataset.safe_data_set)
+
+                safe_count = np.sum(distances[k_nearest_indices] < epsilon)
+                #print(safe_count)
+                #print(candidate)
+                if safe_count > k // 2:
+                    to_remove_indices.append(i) # when majority of the neighbors are safe, remove the candidate
+                    #print("remove", i)
+            #print(to_remove_indices[:10])
+            Xc = np.delete(Xc, to_remove_indices, axis=0)
+            print(len(Xc))
+            dataset.unsafe_data_set = np.vstack((dataset.unsafe_data_set, Xc))
+            #print(len(dataset.unsafe_data_set))
+            # all_dists = np.concatenate(all_dist)
+
+            # print(f"Min Distance: {np.min(all_dists)}")
+            # print(f"Max Distance: {np.max(all_dists)}")
+            # print(f"Mean Distance: {np.mean(all_dists)}")
+            # print(f"Median Distance: {np.median(all_dists)}")
+            # print(f"Percentiles (10%, 25%, 50%, 75%, 90%): {np.percentile(all_dists, [10, 25, 50, 75, 90])}")
+        dataset.save_unsafe_data()
+        
+
+    def barrier_function(x):
+        # Assume a simple barrier function that penalizes the distance from the origin (0, 0)
+        # You can modify this depending on how your barrier function works
+        return np.linalg.norm(x, axis=1)  # Distance from the origin
+
+    def lyapunov_derivative(x):
+        # This could be any function that represents the Lyapunov derivative.
+        # As a placeholder, we'll return a simple linear transformation of x
+        return np.sum(x, axis=1)  # Just an example, modify as needed
+
+    def phi(x):
+        # Simple example of a soft penalty
+        return np.maximum(0, x)  # ReLU activation
+    
+    def cal_total_lost(self):
+        # Draw Border using KNN Algorithm
+        w_s, w_u, wl = 0, 0, 0
+        gamma = 0.5
+        Ns = len(self.safe_data_set)
+        Nu = len(self.unsafe_dataA_set)
+        Lost_function = 0
+        safe_term = w_s * np.mean(self.phi(-self.barrier_function(self.safe_data_set)))
+        unsafe_term = w_u * np.mean(self.phi(self.barrier_function(self.unsafe_dataA_set)))
+        lost_term = wl * np.mean(self.phi(-self.lyapunov_derivative(self.safe_data_set) - gamma *self.lyapunov_derivative(self.safe_data_set)))
+
+        total_loss = safe_term + unsafe_term + lost_term
+        return total_loss
+    
+    def train_Barrier_Function(self):
+        # Train the car to avoid barriers
+        pass
+       
+        
+
     def runsimulation(self):
         #a timer to force stop
-        total_steps = 50000
+        total_steps =  100000
         map_paths = ['map.png', 'map2.png', 'map3.png','map4.png','map5.png']
+        #map_paths = ['map3.png','map4.png','map5.png']
         map_weights = [1, 2, 3, 4, 5]
         weight_sum = np.sum(map_weights)
-        current_map_index = 0  # Start with the first map
+        current_map_index = 1  # Start with the first map
         timeforcurrentmap = int((1/weight_sum) * total_steps)
 
         #setting up the pygame
         info = pygame.display.Info()
-        screen_width, screen_height = info.current_w, info.current_h
         game_map = pygame.image.load(map_paths[current_map_index]).convert()
         screen = pygame.display.set_mode((WIDTH, HEIGHT))
     
         #seting up the SAC
         env = Env.CarEnv(game_map,screen)
         #loaded the model I trained so far
-        model = SAC.load("MlpPolicy_try_6",env, tensorboard_log="./sac_car_env/")
-        #pygame.init()  # Initialize Pygame
-        #this is for creating a new model
+        model = SAC.load("models/MlpPolicy_try_16",env, tensorboard_log="./sac_car_env/")
+        pygame.init()  # Initialize Pygame
         #model = SAC("MlpPolicy", env,verbose=1, tensorboard_log="./sac_car_env/")
         #model.load("MlpPolicy3")
 
         # Train the agent for a set number of timesteps
         #model.learn(total_timesteps=total_steps, tb_log_name="SAC_run")
         # Save the trained model 
-        #model.save("MlpPolicy_try_11")
+        #model.save("models/MlpPolicy_001")
 
         # Initialize previous position
-        self.previous_position = self.position
-
+        #self.previous_position = self.position
+        initial_position = [830, 920]
         obs, info = env.reset()
         running = True
         while running:
@@ -269,36 +468,41 @@ class Car:
                 if event.type == pygame.QUIT:
                     running = False
                     pygame.quit()
+            
             #print("step start", self.previous_position)
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, terminated, end, info = env.step(action)
             if end:
-                self.previous_position = [830, 920] #if the car crash go back to initial position
+                #dataset.save_safe_data()
+                 #self.previous_position = initial_position
+                self.previous_position = env.car.position #if the car crash go back to initial position
             else:
+                #self.previous_position = initial_position
                 self.previous_position = env.car.position #update the current car positon
             #print("step done", self.previous_position)
 
             env.render()  # Call render to draw the car
             total_steps += 1  # Increment step count
             
-            
+            #self.get_safe_data()
             #if total_steps % timeforcurrentmap == 0: #for training, comment out when testing
             if total_steps % 3000 == 0: #testing purpose comment out when training
                 print("time step for current map : ",timeforcurrentmap)
-                timeforcurrentmap = int([current_map_index + 1]/weight_sum * total_steps) # Increase interval gradually
-                current_map_index = (current_map_index + 1) % len(map_paths)  # Rotate through maps
+                # timeforcurrentmap = int([current_map_index + 1]/weight_sum * total_steps) # Increase interval gradually
+                #current_map_index = (current_map_index + 1) % len(map_paths)  # Rotate through maps
                 new_map_png = map_paths[current_map_index]
                 new_map = pygame.image.load(new_map_png).convert()
                 env = Env.CarEnv(new_map,screen)
                 obs, info = env.reset()
 
-            if total_steps % 5000 == 0:
+            if total_steps % 3000 == 0:
                 print(f"Total Steps: {total_steps}, Reward: {reward}")
                 print("obs",obs)
                 print("info", info)
                 print(model)
                 print("terminated",terminated)
                 print("end",env.car.is_alive())
+            
 
             if terminated:
                 obs, info = env.reset()
@@ -314,4 +518,6 @@ if __name__ == "__main__":
     screen_width, screen_height = info.current_w, info.current_h
     pygame.display.set_mode((WIDTH, HEIGHT))
     mycar = Car()
-    mycar.runsimulation()
+    #mycar.runsimulation()
+    #mycar.check_safe_data()
+    mycar.get_unsafe_data()
