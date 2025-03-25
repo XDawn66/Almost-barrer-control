@@ -32,8 +32,8 @@ class Dataset:
     def __init__(self):
         self.safe_data_set = np.empty((0, 4))  # Initialize with an empty array
         self.unsafe_data_set = np.empty((0, 4)) 
-        self.load_safe_data()  # Load the data if it exists
-        self.load_unsafe_data()
+        # self.load_safe_data()  # Load the data if it exists
+        # self.load_unsafe_data()
 
     def load_safe_data(self):
         """Load previously collected data if exists."""
@@ -424,20 +424,15 @@ class Car:
         total_loss = safe_term + unsafe_term + lost_term
         return total_loss
     
-    def train_Barrier_Function(self):
-        # Train the car to avoid barriers
-        pass
-       
-        
 
     def runsimulation(self):
         #a timer to force stop
-        total_steps =  100000
+        total_steps =  20000
         map_paths = ['map.png', 'map2.png', 'map3.png','map4.png','map5.png']
         #map_paths = ['map3.png','map4.png','map5.png']
         map_weights = [1, 2, 3, 4, 5]
         weight_sum = np.sum(map_weights)
-        current_map_index = 1  # Start with the first map
+        current_map_index = 3  # Start with the first map
         timeforcurrentmap = int((1/weight_sum) * total_steps)
 
         #setting up the pygame
@@ -448,15 +443,14 @@ class Car:
         #seting up the SAC
         env = Env.CarEnv(game_map,screen)
         #loaded the model I trained so far
-        model = SAC.load("models/MlpPolicy_try_16",env, tensorboard_log="./sac_car_env/")
+        model = SAC.load("models/MlpPolicy_try_6",env, tensorboard_log="./sac_car_env/")
         pygame.init()  # Initialize Pygame
         #model = SAC("MlpPolicy", env,verbose=1, tensorboard_log="./sac_car_env/")
-        #model.load("MlpPolicy3")
 
         # Train the agent for a set number of timesteps
         #model.learn(total_timesteps=total_steps, tb_log_name="SAC_run")
         # Save the trained model 
-        #model.save("models/MlpPolicy_001")
+        #model.save("models/MlpPolicy_nural_1")
 
         # Initialize previous position
         #self.previous_position = self.position
@@ -489,7 +483,7 @@ class Car:
             if total_steps % 3000 == 0: #testing purpose comment out when training
                 print("time step for current map : ",timeforcurrentmap)
                 # timeforcurrentmap = int([current_map_index + 1]/weight_sum * total_steps) # Increase interval gradually
-                #current_map_index = (current_map_index + 1) % len(map_paths)  # Rotate through maps
+               # current_map_index = (current_map_index + 1) % len(map_paths)  # Rotate through maps
                 new_map_png = map_paths[current_map_index]
                 new_map = pygame.image.load(new_map_png).convert()
                 env = Env.CarEnv(new_map,screen)
@@ -518,6 +512,6 @@ if __name__ == "__main__":
     screen_width, screen_height = info.current_w, info.current_h
     pygame.display.set_mode((WIDTH, HEIGHT))
     mycar = Car()
-    #mycar.runsimulation()
+    mycar.runsimulation()
     #mycar.check_safe_data()
-    mycar.get_unsafe_data()
+    #mycar.get_unsafe_data()
