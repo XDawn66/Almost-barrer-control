@@ -41,7 +41,7 @@ class CarEnv(gym.Env):
 
         input_dim = 4  # Set based on your state vector size
         self.barrier_net = BarrierFunctionNet(input_dim)
-        self.barrier_net.load_state_dict(torch.load("checkpoint9.pth")["model_state_dict"])
+        self.barrier_net.load_state_dict(torch.load("checkpoint6.pth")["model_state_dict"])
         self.barrier_net.eval()  # Set to evaluation mode
         self.Certified = 0
         self.total = 0
@@ -57,14 +57,8 @@ class CarEnv(gym.Env):
         state_tensor = torch.tensor([self.car.position[0], self.car.position[1], self.car.angle, self.car.speed], dtype=torch.float32).unsqueeze(0)
 
         B_value = self.barrier_net(state_tensor).item()
-        # if B_value < 0:
-        # print("B_value", B_value)
-        # # Modify action if unsafe
-        # if B_value < 0:  # Unsafe state detected
-        #     steering *= -0.5  # Reverse steering to avoid danger
-        #     throttle *= 0.5   # Reduce speed
 
-        if B_value > 0:
+        if B_value >= 0:
             self.Certified +=1
         self.total += 1
         Certified_rate = self.Certified/self.total

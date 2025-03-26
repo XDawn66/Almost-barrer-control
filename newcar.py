@@ -251,19 +251,12 @@ class Car:
         #print("color",color)
         if game_map.get_at((x,  y)) == CHECKPOINT_COLOR:
             self.checkpoint_reached += 1
-            #print("checkpoint reached", self.checkpoint_reached)
         
     def is_alive(self):
         # Basic Alive Function
         return self.alive
 
     def get_reward(self, last_position, game_map):
-        # Calculate Reward (Maybe Change?)
-        # return self.distance / 50.0
-        # return self.distance / (CAR_SIZE_X / 2)
-        #print("last",last_position)
-        #print("now:", self.position)
-        #print(radar_data)
 
         X = self.position[0]
         Y = self.position[1]
@@ -394,45 +387,15 @@ class Car:
             # print(f"Median Distance: {np.median(all_dists)}")
             # print(f"Percentiles (10%, 25%, 50%, 75%, 90%): {np.percentile(all_dists, [10, 25, 50, 75, 90])}")
         dataset.save_unsafe_data()
-        
-
-    def barrier_function(x):
-        # Assume a simple barrier function that penalizes the distance from the origin (0, 0)
-        # You can modify this depending on how your barrier function works
-        return np.linalg.norm(x, axis=1)  # Distance from the origin
-
-    def lyapunov_derivative(x):
-        # This could be any function that represents the Lyapunov derivative.
-        # As a placeholder, we'll return a simple linear transformation of x
-        return np.sum(x, axis=1)  # Just an example, modify as needed
-
-    def phi(x):
-        # Simple example of a soft penalty
-        return np.maximum(0, x)  # ReLU activation
-    
-    def cal_total_lost(self):
-        # Draw Border using KNN Algorithm
-        w_s, w_u, wl = 0, 0, 0
-        gamma = 0.5
-        Ns = len(self.safe_data_set)
-        Nu = len(self.unsafe_dataA_set)
-        Lost_function = 0
-        safe_term = w_s * np.mean(self.phi(-self.barrier_function(self.safe_data_set)))
-        unsafe_term = w_u * np.mean(self.phi(self.barrier_function(self.unsafe_dataA_set)))
-        lost_term = wl * np.mean(self.phi(-self.lyapunov_derivative(self.safe_data_set) - gamma *self.lyapunov_derivative(self.safe_data_set)))
-
-        total_loss = safe_term + unsafe_term + lost_term
-        return total_loss
-    
+          
 
     def runsimulation(self):
         #a timer to force stop
         total_steps =  20000
         map_paths = ['map.png', 'map2.png', 'map3.png','map4.png','map5.png']
-        #map_paths = ['map3.png','map4.png','map5.png']
         map_weights = [1, 2, 3, 4, 5]
         weight_sum = np.sum(map_weights)
-        current_map_index = 3  # Start with the first map
+        current_map_index = 0  # Start with the first map
         timeforcurrentmap = int((1/weight_sum) * total_steps)
 
         #setting up the pygame
@@ -463,7 +426,6 @@ class Car:
                     running = False
                     pygame.quit()
             
-            #print("step start", self.previous_position)
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, terminated, end, info = env.step(action)
             if end:
@@ -482,8 +444,8 @@ class Car:
             #if total_steps % timeforcurrentmap == 0: #for training, comment out when testing
             if total_steps % 3000 == 0: #testing purpose comment out when training
                 print("time step for current map : ",timeforcurrentmap)
-                # timeforcurrentmap = int([current_map_index + 1]/weight_sum * total_steps) # Increase interval gradually
-               # current_map_index = (current_map_index + 1) % len(map_paths)  # Rotate through maps
+                timeforcurrentmap = int([current_map_index + 1]/weight_sum * total_steps) # Increase interval gradually
+                current_map_index = (current_map_index + 1) % len(map_paths)  # Rotate through maps
                 new_map_png = map_paths[current_map_index]
                 new_map = pygame.image.load(new_map_png).convert()
                 env = Env.CarEnv(new_map,screen)
