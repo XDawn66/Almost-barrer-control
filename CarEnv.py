@@ -62,7 +62,7 @@ class CarEnv(gym.Env):
             self.Certified +=1
         self.total += 1
         Certified_rate = self.Certified/self.total
-        print("Certified_reate: ",Certified_rate)
+        print("Certified_rate: ",Certified_rate)
 
         # Apply action
         self.car.angle += steering * 10  
